@@ -1,0 +1,40 @@
+declare var Recorder: any; // from recorder.js
+
+export class VoiceRecorderComponent {
+  recorder: any;
+  audioContext: AudioContext;
+  isRecording = false;
+
+  async startRecording() {
+    this.audioContext = new AudioContext();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const input = this.audioContext.createMediaStreamSource(stream);
+
+    this.recorder = new Recorder(input, {
+      numChannels: 1
+    });
+
+    this.recorder.record();
+    this.isRecording = true;
+  }
+
+  stopRecording() {
+    this.recorder.stop();
+
+    this.recorder.exportWAV((blob: Blob) => {
+      this.sendAudio(blob);
+    });
+
+    this.isRecording = false;
+  }
+
+  sendAudio(blob: Blob) {
+    const formData = new FormData();
+    formData.append('file', blob, 'voice.wav');
+
+    fetch('http://localhost:8000/upload-audio/', {
+      method: 'POST',
+      body: formData,
+    }).then(res => res.json()).then(console.log);
+  }
+}

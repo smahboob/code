@@ -1,0 +1,55 @@
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+from pydub import AudioSegment
+import azure.cognitiveservices.speech as speechsdk
+import os
+import uuid
+
+app = FastAPI()
+
+@app.post("/upload-audio/")
+async def upload_audio(file: UploadFile = File(...)):
+    try:
+        temp_id = str(uuid.uuid4())
+        input_path = f"temp_{temp_id}.webm"
+        output_path = f"converted_{temp_id}.wav"
+
+        # Save uploaded file
+        with open(input_path, "wb") as buffer:
+            buffer.write(await file.read())
+
+        # Convert webm to wav
+        audio = AudioSegment.from_file(input_path, format="webm")
+        audio = audio.set_frame_rate(16000).set_channels(1)
+        audio.export(output_path, format="wav")
+
+        # Transcribe with Azure
+        transcript = transcribe_with_azure(output_path)
+
+        return JSONResponse(content={"text": transcript})
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    finally:
+        # Clean up
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+
+def transcribe_with_azure(audio_path):
+    speech_key = "YOUR_AZURE_KEY"
+    service_region = "YOUR_REGION"
+
+    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
+    audio_config = speechsdk.AudioConfig(filename=audio_path)
+    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+
+    result = speech_recognizer.recognize_once()
+
+    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+        return result.text
+    else:
+        return f"Error: {result.reason}"

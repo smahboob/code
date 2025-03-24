@@ -1,0 +1,56 @@
+// voice-recorder.component.ts
+import { Component } from '@angular/core';
+
+@Component({
+  selector: 'app-voice-recorder',
+  templateUrl: './voice-recorder.component.html',
+})
+export class VoiceRecorderComponent {
+  mediaRecorder: any;
+  audioChunks: any[] = [];
+  isRecording = false;
+
+  async startRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    this.mediaRecorder = new MediaRecorder(stream);
+    this.audioChunks = [];
+
+    this.mediaRecorder.ondataavailable = (event: any) => {
+      if (event.data.size > 0) {
+        this.audioChunks.push(event.data);
+      }
+    };
+
+    this.mediaRecorder.onstop = () => {
+      const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+
+      // Optional: convert to base64 or send as FormData
+      this.sendAudioToAPI(audioBlob);
+    };
+
+    this.mediaRecorder.start();
+    this.isRecording = true;
+  }
+
+  stopRecording() {
+    if (this.mediaRecorder) {
+      this.mediaRecorder.stop();
+      this.isRecording = false;
+    }
+  }
+
+  sendAudioToAPI(audioBlob: Blob) {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'voice.webm');
+
+    fetch('http://localhost:5000/upload-audio', {
+      method: 'POST',
+      body: formData,
+    }).then(response => {
+      if (response.ok) {
+        console.log('Audio sent successfully');
+      }
+    });
+  }
+}

@@ -1,0 +1,61 @@
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
+import azure.cognitiveservices.speech as speechsdk
+import os
+import uuid
+
+app = FastAPI()
+
+@app.post("/upload-audio/")
+async def upload_audio(file: UploadFile = File(...)):
+    try:
+        # Save WebM file temporarily
+        temp_id = str(uuid.uuid4())
+        input_path = f"temp_{temp_id}.webm"
+
+        with open(input_path, "wb") as f:
+            f.write(await file.read())
+
+        # Transcribe using Azure directly
+        transcript = transcribe_webm_with_azure(input_path)
+
+        return JSONResponse(content={"text": transcript})
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    finally:
+        if os.path.exists(input_path):
+            os.remove(input_path)
+
+def transcribe_webm_with_azure(filepath):
+    # Azure credentials
+    speech_key = "YOUR_AZURE_KEY"
+    service_region = "YOUR_REGION"
+
+    speech_config = speechsdk.SpeechConfig(
+        subscription=speech_key, region=service_region
+    )
+
+    # Important: specify compressed format explicitly
+    speech_config.speech_recognition_language = "en-US"
+    compressed_format = speechsdk.audio.AudioStreamFormat(compressed_stream_format=speechsdk.audio.AudioStreamContainerFormat.WEBM)
+
+    # Read file into memory and stream
+    with open(filepath, "rb") as audio_file:
+        audio_data = audio_file.read()
+
+    stream = speechsdk.audio.PushAudioInputStream(compressed_format)
+    stream.write(audio_data)
+    stream.close()
+
+    audio_config = speechsdk.audio.AudioConfig(stream=stream)
+    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+
+    result = speech_recognizer.recognize_once()
+
+    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+        return result.text
+    else:
+        return f"Error: {result.reason}"
+

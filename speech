@@ -1,0 +1,178 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import azure.cognitiveservices.speech as speechsdk
+import os
+import uuid
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+# Replace with your Azure subscription key and region
+subscription_key = "YourAzureSubscriptionKey"
+region = "YourAzureRegion"  # e.g., "eastus"
+
+# Define the path to save the audio file (without UUID initially)
+audio_folder = "static/audio/"
+
+# Ensure the folder exists
+if not os.path.exists(audio_folder):
+    os.makedirs(audio_folder)
+
+class TextRequest(BaseModel):
+    text: str
+
+@app.post('/synthesize-speech')
+async def synthesize_speech(request: TextRequest):
+    text = request.text
+
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    # Generate a unique UUID for each file
+    unique_filename = str(uuid.uuid4()) + ".wav"
+    audio_file_path = os.path.join(audio_folder, unique_filename)
+
+    # Initialize speech configuration with Azure subscription key and region
+    speech_config = speechsdk.SpeechConfig(subscription=subscription_key, region=region)
+    speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"  # Choose voice
+
+    # Set the audio output to the newly generated file name
+    audio_config = speechsdk.audio.AudioOutputConfig(filename=audio_file_path)
+
+    # Create a synthesizer object
+    synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
+
+    # Synthesize the text to speech
+    result = synthesizer.speak_text_async(text).get()
+
+    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        print("Successfully synthesized the speech.")
+        # Return the URL to the audio file
+        return {"audioUrl": f"/audio/{unique_filename}"}
+    else:
+        print("Speech synthesis failed:", result.error_details)
+        raise HTTPException(status_code=500, detail="Speech synthesis failed")
+
+# Serve the audio file statically
+@app.get("/audio/{filename}")
+async def serve_audio(filename: str):
+    file_path = os.path.join(audio_folder, filename)
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    else:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=5000)
+
+
+
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import azure.cognitiveservices.speech as speechsdk
+import os
+import uuid
+from fastapi.responses import FileResponse
+
+app = FastAPI()
+
+# Replace with your Azure subscription key and region
+subscription_key = "YourAzureSubscriptionKey"
+region = "YourAzureRegion"  # e.g., "eastus"
+
+# Define the path to save the audio file (without UUID initially)
+audio_folder = "static/audio/"
+
+# Ensure the folder exists
+if not os.path.exists(audio_folder):
+    os.makedirs(audio_folder)
+
+class TextRequest(BaseModel):
+    text: str
+
+@app.post('/synthesize-speech')
+async def synthesize_speech(request: TextRequest):
+    text = request.text
+
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    # Generate a unique UUID for each file
+    unique_filename = str(uuid.uuid4()) + ".wav"
+    audio_file_path = os.path.join(audio_folder, unique_filename)
+
+    # Initialize speech configuration with Azure subscription key and region
+    speech_config = speechsdk.SpeechConfig(subscription=subscription_key, region=region)
+    speech_config.speech_synthesis_voice_name = "en-US-JennyNeural"  # Choose voice
+
+    # Set the audio output to the newly generated file name
+    audio_config = speechsdk.audio.AudioOutputConfig(filename=audio_file_path)
+
+    # Create a synthesizer object
+    synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
+
+    # Synthesize the text to speech
+    result = synthesizer.speak_text_async(text).get()
+
+    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        print("Successfully synthesized the speech.")
+        # Return the URL to the audio file
+        return {"audioUrl": f"/audio/{unique_filename}"}
+    else:
+        print("Speech synthesis failed:", result.error_details)
+        raise HTTPException(status_code=500, detail="Speech synthesis failed")
+
+# Serve the audio file statically
+@app.get("/audio/{filename}")
+async def serve_audio(filename: str):
+    file_path = os.path.join(audio_folder, filename)
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    else:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=5000)
+
+import { Component } from '@angular/core';
+import { TextToSpeechService } from './text-to-speech.service';
+
+@Component({
+  selector: 'app-root',
+  templateUrl: './app.component.html',
+  styleUrls: ['./app.component.css'],
+})
+export class AppComponent {
+  textToSpeak: string = '';
+  audioUrl: string | null = null;
+
+  constructor(private textToSpeechService: TextToSpeechService) {}
+
+  // Method to synthesize speech and get the audio file URL
+  synthesizeSpeech() {
+    if (this.textToSpeak.trim()) {
+      this.textToSpeechService.synthesizeSpeech(this.textToSpeak).subscribe(
+        (response) => {
+          this.audioUrl = response.audioUrl;
+          this.playAudio();
+        },
+        (error) => {
+          console.error('Error synthesizing speech:', error);
+        }
+      );
+    } else {
+      alert('Please enter text to synthesize.');
+    }
+  }
+
+  // Method to play the audio once the URL is retrieved
+  playAudio() {
+    if (this.audioUrl) {
+      const audio = new Audio(this.audioUrl);
+      audio.play();
+    }
+  }
+}

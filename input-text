@@ -1,3 +1,104 @@
+--------
+import time
+import os
+import logging
+import uuid
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from azure.cognitiveservices.speech import SpeechConfig, SpeechRecognizer, AudioConfig
+from pydub import AudioSegment
+
+# Initialize FastAPI app
+app = FastAPI()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Replace these with your actual Azure subscription key and region
+subscription_key = "YourAzureSubscriptionKey"
+region = "YourAzureRegion"  # e.g., "eastus"
+
+# Directory to temporarily store the uploaded audio file
+audio_folder = "uploads/"
+if not os.path.exists(audio_folder):
+    os.makedirs(audio_folder)
+
+@app.post("/recognize-speech/")
+async def recognize_speech(file: UploadFile = File(...)):
+    try:
+        # Generate a unique filename for the uploaded file
+        file_name = str(uuid.uuid4()) + ".wav"
+        file_path = os.path.join(audio_folder, file_name)
+
+        # Log file saving process
+        logger.info(f"Saving uploaded file to {file_path}")
+        
+        # Save the uploaded file to the disk temporarily
+        with open(file_path, "wb") as f:
+            # Write the contents of the uploaded file to the local file
+            f.write(await file.read())
+        
+        # Log after the file is saved
+        logger.info(f"File successfully saved to {file_path}")
+
+        # Ensure that the file is fully written and available
+        logger.info(f"Checking if file is available at {file_path}")
+        
+        # Retry checking the file availability with a small delay
+        max_retries = 5
+        retries = 0
+        while not os.path.exists(file_path) and retries < max_retries:
+            logger.info(f"File not available, retrying... ({retries + 1}/{max_retries})")
+            time.sleep(0.1)  # Wait for 100ms before retrying
+            retries += 1
+        
+        if retries >= max_retries:
+            logger.error(f"File not available after {max_retries} retries.")
+            raise HTTPException(status_code=500, detail="File not available after retries")
+        
+        logger.info(f"File is available for processing.")
+
+        # Ensure the audio file is in the correct format (16kHz, 16-bit PCM)
+        try:
+            audio = AudioSegment.from_file(file_path)
+            audio = audio.set_channels(1)  # Mono
+            audio = audio.set_sample_width(2)  # 16-bit PCM
+            audio = audio.set_frame_rate(16000)  # Sample rate of 16kHz
+            audio.export(file_path, format="wav")
+            logger.info(f"Audio file successfully processed and exported.")
+        except Exception as e:
+            logger.error(f"Error processing audio file: {e}")
+            raise HTTPException(status_code=500, detail="Error processing audio file")
+
+        # Initialize speech configuration with Azure subscription key and region
+        speech_config = SpeechConfig(subscription=subscription_key, region=region)
+        
+        # Create AudioConfig pointing to the saved audio file
+        audio_config = AudioConfig(filename=file_path)
+        
+        # Create SpeechRecognizer object
+        recognizer = SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+        
+        logger.info(f"Starting speech recognition for file: {file_path}")
+        
+        # Start speech recognition asynchronously
+        result = await recognizer.recognize_once_async()
+
+        # Log the result of speech recognition
+        if result.reason == result.Reason.RecognizedSpeech:
+            logger.info(f"Speech recognition successful: {result.text}")
+            return {"recognized_text": result.text}
+        else:
+            logger.error(f"Speech recognition failed with reason: {result.reason}")
+            raise HTTPException(status_code=500, detail="Speech recognition failed")
+
+    except Exception as e:
+        logger.error(f"Error in recognize_speech endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+
+--------
+
+
 flask
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from azure.cognitiveservices.speech import SpeechConfig, SpeechRecognizer, AudioConfig

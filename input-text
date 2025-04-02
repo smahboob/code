@@ -135,3 +135,47 @@ export class AppComponent {
     );
   }
 }
+
+---------------
+
+
+
+@app.post("/recognize-speech/")
+async def recognize_speech(file: UploadFile = File(...)):
+    try:
+        # Generate a unique filename for the uploaded file
+        file_name = str(uuid.uuid4()) + ".wav"
+        file_path = os.path.join(audio_folder, file_name)
+
+        # Use the 'with' statement to ensure the file is closed after writing
+        with open(file_path, "wb") as f:
+            # Write the contents of the uploaded file to the local file
+            f.write(await file.read())
+
+        # Ensure the audio file is in the correct format (16kHz, 16-bit PCM)
+        audio = AudioSegment.from_file(file_path)
+        audio = audio.set_channels(1)  # Mono
+        audio = audio.set_sample_width(2)  # 16-bit PCM
+        audio = audio.set_frame_rate(16000)  # Sample rate of 16kHz
+        audio.export(file_path, format="wav")
+
+        # Initialize speech configuration with Azure subscription key and region
+        speech_config = SpeechConfig(subscription=subscription_key, region=region)
+        
+        # Create AudioConfig pointing to the saved audio file
+        audio_config = AudioConfig(filename=file_path)
+        
+        # Create SpeechRecognizer object
+        recognizer = SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+        
+        # Start speech recognition asynchronously
+        result = await recognizer.recognize_once_async()
+
+        # Check if speech was recognized successfully
+        if result.reason == result.Reason.RecognizedSpeech:
+            return {"recognized_text": result.text}
+        else:
+            raise HTTPException(status_code=500, detail="Speech recognition failed")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

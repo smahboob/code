@@ -176,3 +176,88 @@ export class AppComponent {
     }
   }
 }
+
+
+---------
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class TextToSpeechService {
+  private baseUrl = 'http://localhost:33000'; // FastAPI server running on port 33000
+
+  constructor(private http: HttpClient) {}
+
+  // Method to synthesize speech and get the audio file URL
+  synthesizeSpeech(text: string): Observable<any> {
+    return this.http.post<any>(`${this.baseUrl}/synthesize-speech`, { text });
+  }
+
+  // Method to retrieve the audio file from the server
+  getAudioFile(fileName: string): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}/audio/${fileName}`, {
+      responseType: 'blob',  // Ensure the response is in blob format
+    });
+  }
+
+  // Method to synthesize speech, get the file URL, and then fetch the file
+  async synthesizeAndGetAudioFile(text: string): Promise<Blob> {
+    try {
+      // Synthesize speech
+      const response = await this.synthesizeSpeech(text).toPromise();
+      
+      // Retrieve the audio file using the filename from the response
+      const audioUrl = response.audioUrl;
+      const fileName = audioUrl.split('/').pop();  // Extract the filename from the URL
+      
+      // Fetch the audio file
+      return await this.getAudioFile(fileName!).toPromise();
+    } catch (error) {
+      throw new Error('Error while synthesizing or retrieving the audio file.');
+    }
+  }
+}
+---------
+import { Component } from '@angular/core';
+import { TextToSpeechService } from './text-to-speech.service';
+
+@Component({
+  selector: 'app-root',
+  templateUrl: './app.component.html',
+  styleUrls: ['./app.component.css'],
+})
+export class AppComponent {
+  textToSpeak: string = '';
+  audioUrl: string | null = null;
+
+  constructor(private textToSpeechService: TextToSpeechService) {}
+
+  // Method to synthesize speech and play the audio
+  async synthesizeSpeech() {
+    if (this.textToSpeak.trim()) {
+      try {
+        // Step 1: Synthesize the speech and get the audio file
+        const audioBlob = await this.textToSpeechService.synthesizeAndGetAudioFile(this.textToSpeak);
+        
+        // Step 2: Create a URL for the audio blob
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Step 3: Play the audio
+        this.playAudio(audioUrl);
+      } catch (error) {
+        console.error('Error synthesizing speech:', error);
+      }
+    } else {
+      alert('Please enter text to synthesize.');
+    }
+  }
+
+  // Method to play the audio
+  playAudio(audioUrl: string) {
+    const audio = new Audio(audioUrl);
+    audio.play();
+  }
+}

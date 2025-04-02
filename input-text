@@ -1,3 +1,86 @@
+import io
+import time
+import os
+import logging
+import uuid
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from azure.cognitiveservices.speech import SpeechConfig, SpeechRecognizer, AudioConfig
+from pydub import AudioSegment
+
+# Initialize FastAPI app
+app = FastAPI()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Replace these with your actual Azure subscription key and region
+subscription_key = "YourAzureSubscriptionKey"
+region = "YourAzureRegion"  # e.g., "eastus"
+
+# Directory to temporarily store the uploaded audio file (not used anymore for this solution)
+audio_folder = "uploads/"
+
+@app.post("/recognize-speech/")
+async def recognize_speech(file: UploadFile = File(...)):
+    try:
+        # Generate a unique filename for the uploaded file
+        file_name = str(uuid.uuid4()) + ".wav"
+        
+        # Create an in-memory byte stream to store the uploaded file content
+        file_content = await file.read()
+        in_memory_file = io.BytesIO(file_content)
+
+        # Log in-memory file save
+        logger.info(f"Received file, size: {len(file_content)} bytes, processing in-memory.")
+
+        # Ensure the audio file is in the correct format (16kHz, 16-bit PCM)
+        try:
+            audio = AudioSegment.from_file(in_memory_file, format="wav")
+            audio = audio.set_channels(1)  # Mono
+            audio = audio.set_sample_width(2)  # 16-bit PCM
+            audio = audio.set_frame_rate(16000)  # Sample rate of 16kHz
+
+            # Export the in-memory audio to a new BytesIO object
+            processed_audio = io.BytesIO()
+            audio.export(processed_audio, format="wav")
+            processed_audio.seek(0)  # Rewind the BytesIO object to the beginning
+
+            # Log audio processing success
+            logger.info(f"Audio file successfully processed and exported in memory.")
+        except Exception as e:
+            logger.error(f"Error processing audio file: {e}")
+            raise HTTPException(status_code=500, detail="Error processing audio file")
+
+        # Initialize speech configuration with Azure subscription key and region
+        speech_config = SpeechConfig(subscription=subscription_key, region=region)
+        
+        # Create AudioConfig pointing to the in-memory audio file
+        audio_config = AudioConfig(stream=processed_audio)
+        
+        # Create SpeechRecognizer object
+        recognizer = SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+        
+        logger.info(f"Starting speech recognition for in-memory file.")
+        
+        # Start speech recognition asynchronously
+        result = await recognizer.recognize_once_async()
+
+        # Log the result of speech recognition
+        if result.reason == result.Reason.RecognizedSpeech:
+            logger.info(f"Speech recognition successful: {result.text}")
+            return {"recognized_text": result.text}
+        else:
+            logger.error(f"Speech recognition failed with reason: {result.reason}")
+            raise HTTPException(status_code=500, detail="Speech recognition failed")
+
+    except Exception as e:
+        logger.error(f"Error in recognize_speech endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+
+----------
+
+
 --------
 import time
 import os
